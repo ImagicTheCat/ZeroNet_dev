@@ -7,6 +7,6 @@ Topic (on ZeroNet): http://127.0.0.1:43110/142jqssVAj2iRxMACJg2dzipB5oicZYz5w/?T
 
 ## Dependencies
 
-* pako.min.js: https://github.com/nodeca/pako
-* sha256.min.js: https://github.com/emn178/js-sha256
-* msgpack.min.js: https://github.com/kawanet/msgpack-lite
+* pako.min.js: https://github.com/nodeca/pako (compression)
+* sha256.min.js: https://github.com/emn178/js-sha256 (hash)
+* msgpack.min.js: https://github.com/kawanet/msgpack-lite (serialization)
