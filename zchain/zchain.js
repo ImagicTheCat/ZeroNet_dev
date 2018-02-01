@@ -34,6 +34,7 @@ function zchain(name, frame)
   this.users = {} //auth_address -> map of hash => owned block
   this.cert_user_ids = {}
   this.to_build = true;
+  this.precheck_callbacks = []
   this.check_callbacks = []
   this.process_callbacks = []
   this.build_callbacks = []
@@ -72,6 +73,9 @@ zchain.prototype.loadUserFile = function(auth_address)
       }
     });
   }
+
+  if(!this.preCheckUser(auth_address)) //invalid user
+    return;
 
   //parse file
   this.frame.cmd("fileGet", {inner_path: "data/users/"+auth_address+"/"+this.name+".zchain", format: "base64"}, function(data){
@@ -118,10 +122,12 @@ zchain.prototype.loadUserFile = function(auth_address)
                 hash: hash
               }
 
-              new_blocks[hash] = nblock;
-              _this.blocks[hash] = nblock;
+              if(_this.preCheckBlock(nblock)){
+                new_blocks[hash] = nblock;
+                _this.blocks[hash] = nblock;
 
-              _this.to_build = true; //flag rebuild
+                _this.to_build = true; //flag rebuild
+              }
             }
           }
         }
@@ -136,7 +142,44 @@ zchain.prototype.loadUserFile = function(auth_address)
   });
 }
 
-//check if a block is valid
+
+//check if a user is valid
+//return true or false  (no callbacks => true)
+zchain.prototype.preCheckUser = function(auth_address)
+{
+  var valid = true;
+
+  var i = 0;
+  while(valid && i < this.precheck_callbacks.length){
+    var cb = this.precheck_callbacks[i][0];
+    if(cb)
+      valid = cb(auth_address);
+    i++;
+  }
+
+  return valid;
+}
+
+//check if a block (not added to the chain yet) is valid
+//return true or false  (no callbacks => true)
+zchain.prototype.preCheckBlock = function(block)
+{
+  var valid = true;
+
+  var i = 0;
+  while(valid && i < this.precheck_callbacks.length){
+    var cb = this.precheck_callbacks[i][1];
+    if(cb)
+      valid = cb(block);
+    i++;
+  }
+
+  return valid;
+}
+
+
+
+//check if a block is valid (after the previous processed block, before the next)
 //return true or false
 zchain.prototype.checkBlock = function(block)
 {
@@ -227,7 +270,6 @@ zchain.prototype.buildGraph = function()
 //return true if rebuilt, false if nothing changed
 zchain.prototype.build = function()
 {
-  var begin_time = new Date().getTime();
 
   if(this.to_build){
     this.to_build = false;
@@ -241,7 +283,14 @@ zchain.prototype.build = function()
         stats.used_blocks = 0;
     }
 
+    //stats
+    var begin_time = new Date().getTime();
+
     this.buildGraph();
+
+    //stats
+    this.stats.build_graph_time = new Date().getTime()-begin_time;
+    begin_time = new Date().getTime();
 
     //build state
     this.state = {} //clear
@@ -308,7 +357,7 @@ zchain.prototype.build = function()
     this.stats.built_hash = built_sha.hex();
     this.stats.built_blocks = this.built.length;
     this.stats.build_timestamp = begin_time;
-    this.stats.build_time = new Date().getTime()-begin_time;
+    this.stats.build_check_process_time = new Date().getTime()-begin_time;
 
     //postbuild callbacks
     for(var i = 0; i < this.build_callbacks.length; i++)
@@ -450,7 +499,16 @@ zchain.prototype.cleanup = function(force_purge)
 
 
 
+//register precheck callbacks, used to check the validity of a user or individual block to be added to the chain graph
+//cb_user(auth_address): should return true/false
+//cb_block(block): should return true/false
+zchain.prototype.addPreCheckCallbacks = function(cb_user, cb_block)
+{
+  this.precheck_callbacks.push([cb_user, cb_block]);
+}
+
 //register a block check callback, used to check the validity of a block 
+//this callback is guaranteed to be called after all previous valid blocks were processed for a specific state and before the next blocks processing
 //if only one of the check callbacks return false, the block is invalid
 //cb(state, block): should return true/false to mark the block as valid/invalid
 zchain.prototype.addCheckCallback = function(cb)
@@ -459,6 +517,7 @@ zchain.prototype.addCheckCallback = function(cb)
 }
 
 //register a block process callback, used to process a block data to compute the chain state
+//this callback is guaranteed to be called after the block validation for a specific state, it should only modify the passed state
 //cb(state, block)
 zchain.prototype.addProcessCallback = function(cb)
 {
