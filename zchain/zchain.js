@@ -39,6 +39,7 @@ function zchain(name, frame)
   this.build_callbacks = []
   this.starts = [] //start blocks (blocks without previous block)
   this.built = [] //final built chain, list of blocks
+  this.stats = {users: {}}
 
   this.addCheckCallback(check_block); //add basic block checking
 }
@@ -75,8 +76,20 @@ zchain.prototype.loadUserFile = function(auth_address)
   //parse file
   this.frame.cmd("fileGet", {inner_path: "data/users/"+auth_address+"/"+this.name+".zchain", format: "base64"}, function(data){
     if(data){
+      //init user stats
+      var stats = {}
+      _this.stats.users[auth_address] = stats;
+
       //decode zchain file
-      var blocks = msgpack.decode(pako.inflate(b64toa(data)));
+      var data_bytes = b64toa(data);
+      var data_uncompressed = pako.inflate(data_bytes);
+      var blocks = msgpack.decode(data_uncompressed);
+
+      stats.data_size = data_uncompressed.length;
+      stats.data_compressed_size = data_bytes.length;
+      stats.blocks = 0;
+      stats.valid_blocks = 0;
+
       if(blocks){
         var old_blocks = _this.users[auth_address];
         var new_blocks = {}
@@ -84,10 +97,14 @@ zchain.prototype.loadUserFile = function(auth_address)
 
         //store blocks
         for(var hash in blocks){
+          stats.blocks++;
+
           var block = blocks[hash];
           var valid_hash = (hash_block(block[0] || "", auth_address, block[1]) == hash); 
 
           if(valid_hash){
+            stats.valid_blocks++;
+
             var old_block = (old_blocks ? old_blocks[hash] : null);
             if(old_block){ //block already referenced, preserve
               new_blocks[hash] = old_block;
@@ -210,9 +227,19 @@ zchain.prototype.buildGraph = function()
 //return true if rebuilt, false if nothing changed
 zchain.prototype.build = function()
 {
+  var begin_time = new Date().getTime();
+
   if(this.to_build){
     this.to_build = false;
     this.built = []
+
+    //reset stats
+    var built_sha = sha256.create();
+    for(var auth_address in this.stats.users){
+      var stats = this.stats.users[auth_address];
+      if(stats)
+        stats.used_blocks = 0;
+    }
 
     this.buildGraph();
 
@@ -239,6 +266,12 @@ zchain.prototype.build = function()
         if(this.checkBlock(block)){ //check
           this.processBlock(block); //process
           this.built.push(block);
+          
+          //stats
+          built_sha.update(block.hash);
+          var ustats = this.stats.users[block.owner];
+          if(ustats)
+            ustats.used_blocks++;
 
           //update nodes => next blocks
           nodes = []
@@ -259,6 +292,12 @@ zchain.prototype.build = function()
         nodes = []
     }
 
+    //stats
+    this.stats.built_hash = built_sha.hex();
+    this.stats.built_blocks = this.built.length;
+    this.stats.build_timestamp = begin_time;
+    this.stats.build_time = new Date().getTime()-begin_time;
+
     //postbuild callbacks
     for(var i = 0; i < this.build_callbacks.length; i++)
       this.build_callbacks[i](this.state, false);
@@ -278,6 +317,7 @@ zchain.prototype.getCertUserId = function(auth_address)
 //info: site_info
 zchain.prototype.handleSiteInfo = function(info)
 {
+  this.site_info = info;
   var evt = info.event;
   if(evt){
     if(evt[0] == "file_done"){
