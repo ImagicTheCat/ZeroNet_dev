@@ -20,8 +20,8 @@ Topic (on ZeroNet): http://127.0.0.1:43110/142jqssVAj2iRxMACJg2dzipB5oicZYz5w/?T
 
 zchain is about integrity, the chain will rollback to the previous valid block when a block is modified or deleted. 
 A user can only invalid the blocks following his blocks this way, in some case (total deletion) the following blocks could be the new chain origin. 
-It's also possible to replace the current chain by generating a chain more trustable than the first (more blocks, more users). But more the game advance, more it's hard for a single user to replace the chain this way (limited storage).
-Modifying the chain rules (check/process) can invalid blocks of the chain, but it depends on the chain logic. It's possible to add new features, backward effectives and preserving the chain.
+It's also possible to replace the current chain by generating a chain more trustable than the first (more blocks, more users). But more the chain advance, more it's hard for a single user to replace it this way (limited storage).
+Modifying the chain rules (check/process) can invalid blocks of the chain, but it depends on the chain logic. It's possible to add new features, retroactives and preserving the chain.
 
 
 ## Use cases / Ideas
