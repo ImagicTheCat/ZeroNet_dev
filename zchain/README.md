@@ -33,3 +33,7 @@ You can timestamp blocks with a unit like 10 minutes to prevent sync issues, the
 ### Ban players
 
 If some players are modifiyng their blocks or deleting them to troll, you could ban them using a check callback and a simple list.
+
+### Snapshot
+
+Since ZeroNet sites (zites) are owned by someone, this someone could create special blocks (snapshots) at the origin of the chain and set those blocks as the new chain origin. Those specials blocks could save the current state of the chain and invalid the other blocks, so users could cleanup their invalid blocks and push new blocks after this snapshot. This can save disk usage and drastically decrease the computation time of the state (it also make the state more resistant to blocks modification/deletion, because the state can only be corrupted to the last snapshot). 

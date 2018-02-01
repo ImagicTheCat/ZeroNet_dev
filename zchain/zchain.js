@@ -1,7 +1,7 @@
 /* small library to create pseudo-blockchain on ZeroNet */
 //TODO: 
-// OR add better detection of block modification and insertion, so if someone insert a block at the begining of the chain, the game master/reputation system could ban him (invalidating all his blocks)
 // lazy computation when a new block is added to the last chain block
+// snapshot system to not recompute the entire chain on changes
 
 var atob64 = function (u8){
   return btoa(String.fromCharCode.apply(null, u8));
@@ -392,14 +392,18 @@ zchain.prototype.handleSiteInfo = function(info)
 
 //push a new block to the chain as the current cert id user
 //bdata: js object
-zchain.prototype.push = function(bdata)
+//prev (optional): previous hash, "" for a start block
+zchain.prototype.push = function(bdata, prev)
 {
   var _this = this;
 
-  //get chain head
-  var head = null;
-  if(this.built.length > 0)
-    head = this.built[this.built.length-1];
+  //null prev, get chain head hash
+  if(prev == null){
+    if(this.built.length > 0)
+      prev = this.built[this.built.length-1].hash;
+    else
+      prev = "";
+  }
 
   this.frame.cmd("siteInfo", {}, function(info){
     var file = "data/users/"+info.auth_address+"/"+_this.name+".zchain";
@@ -413,7 +417,7 @@ zchain.prototype.push = function(bdata)
 
         //add block
         var bdatab64 = atob64(msgpack.encode(bdata));
-        blocks[hash_block((head ? head.hash : ""), info.auth_address, bdatab64)] = [(head ? head.hash : ""), bdatab64];
+        blocks[hash_block(prev, info.auth_address, bdatab64)] = [prev, bdatab64];
 
         //write blocks to zchain file
         _this.frame.cmd("fileWrite", {inner_path: file, content_base64: atob64(pako.deflate(msgpack.encode(blocks)))}, function(res){
