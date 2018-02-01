@@ -254,7 +254,18 @@ zchain.prototype.build = function()
     var nodes = this.starts; //begin with start blocks
     while(nodes.length > 0){
       //sort nodes by ASC trust and ASC hash order on equal trust
-      nodes.sort(function(a,b){ return (a.trust < b.trust) || (a.trust == b.trust && a.hash < b.hash); });
+      nodes.sort(function(a,b){ 
+        if(a.trust != b.trust)
+          return a.trust-b.trust;
+        else{
+          if(a.hash < b.hash)
+            return -1;
+          else if(a.hash > b.hash)
+            return 1;
+
+          return 0;
+        }
+      });
       //reverse (trustables first)
       nodes.reverse();
 
@@ -263,6 +274,7 @@ zchain.prototype.build = function()
       //take first valid block and process it
       while(!done && i < nodes.length){
         var block = nodes[i];
+
         if(this.checkBlock(block)){ //check
           this.processBlock(block); //process
           this.built.push(block);
@@ -339,7 +351,6 @@ zchain.prototype.push = function(bdata)
   var head = null;
   if(this.built.length > 0)
     head = this.built[this.built.length-1];
-
 
   this.frame.cmd("siteInfo", {}, function(info){
     var file = "data/users/"+info.auth_address+"/"+_this.name+".zchain";
