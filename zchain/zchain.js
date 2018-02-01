@@ -392,8 +392,9 @@ zchain.prototype.handleSiteInfo = function(info)
 
 //push a new block to the chain as the current cert id user
 //bdata: js object
-//prev (optional): previous hash, "" for a start block
-zchain.prototype.push = function(bdata, prev)
+//prev (optional): previous hash
+//auth_address (optional): default is current logged user (used to push as another user, ex: the zite owner)
+zchain.prototype.push = function(bdata, prev, auth_address)
 {
   var _this = this;
 
@@ -405,100 +406,93 @@ zchain.prototype.push = function(bdata, prev)
       prev = "";
   }
 
-  this.frame.cmd("siteInfo", {}, function(info){
-    var file = "data/users/"+info.auth_address+"/"+_this.name+".zchain";
+  if(auth_address == null && this.site_info)
+    auth_address = this.site_info.auth_address;
 
-    if(info.cert_user_id){
-      _this.frame.cmd("fileGet", {inner_path: file, required: false, format: "base64"}, function(data){
-        //read blocks
-        var blocks = {}
-        if(data)
-          blocks = msgpack.decode(pako.inflate(b64toa(data)));
+  if(auth_address){
+    var file = "data/users/"+auth_address+"/"+this.name+".zchain";
 
-        //add block
-        var bdatab64 = atob64(msgpack.encode(bdata));
-        blocks[hash_block(prev, info.auth_address, bdatab64)] = [prev, bdatab64];
+    _this.frame.cmd("fileGet", {inner_path: file, required: false, format: "base64"}, function(data){
+      //read blocks
+      var blocks = {}
+      if(data)
+        blocks = msgpack.decode(pako.inflate(b64toa(data)));
 
+      //add block
+      var bdatab64 = atob64(msgpack.encode(bdata));
+      blocks[hash_block(prev, auth_address, bdatab64)] = [prev, bdatab64];
+
+      //write blocks to zchain file
+      _this.frame.cmd("fileWrite", {inner_path: file, content_base64: atob64(pako.deflate(msgpack.encode(blocks)))}, function(res){
+        if(res == "ok"){
+          //sign and publish
+          var cfile = "data/users/"+auth_address+"/content.json";
+          _this.frame.cmd("siteSign", {inner_path: cfile}, function(res){
+            _this.frame.cmd("sitePublish", {inner_path: cfile, sign: false});
+            _this.loadUserFile(auth_address);
+          });
+        }
+      });
+    });
+  }
+}
+
+//cleanup invalid blocks
+//force_purge: if set (true), will remove "orphan" blocks (bad logic check), if blocks are not properly loaded, calling this can remove all of them
+//auth_address (optional): default is current logged user (used to push as another user, ex: the zite owner)
+zchain.prototype.cleanup = function(force_purge, auth_address)
+{
+  var _this = this;
+
+  if(auth_address == null && this.site_info)
+    auth_address = this.site_info.auth_address;
+
+  if(auth_address){
+    var file = "data/users/"+auth_address+"/"+_this.name+".zchain";
+
+    this.frame.cmd("fileGet", {inner_path: file, required: false, format: "base64"}, function(data){
+      var changed = false;
+
+      //read blocks
+      var blocks = {}
+      if(data)
+        blocks = msgpack.decode(pako.inflate(b64toa(data)));
+
+      //cleanup invalid blocks
+      for(var hash in blocks){
+        var block = blocks[hash];
+        var valid_hash = (hash_block(block[0] || "", auth_address, block[1]) == hash); 
+
+
+        //if force_purge set, remove missing block references
+        var purge = false;
+        if(force_purge){
+          var block_ref = _this.blocks[hash];
+          purge = (block_ref && _this.built.indexOf(block_ref) < 0);
+        }
+
+        //delete check
+        if(!valid_hash || purge){
+          changed = true;
+          delete blocks[hash];
+        }
+      }
+
+      if(changed){
         //write blocks to zchain file
         _this.frame.cmd("fileWrite", {inner_path: file, content_base64: atob64(pako.deflate(msgpack.encode(blocks)))}, function(res){
           if(res == "ok"){
             //sign and publish
-            var cfile = "data/users/"+info.auth_address+"/content.json";
+            var cfile = "data/users/"+auth_address+"/content.json";
             _this.frame.cmd("siteSign", {inner_path: cfile}, function(res){
               _this.frame.cmd("sitePublish", {inner_path: cfile, sign: false});
-              _this.loadUserFile(info.auth_address);
+              _this.loadUserFile(auth_address);
             });
           }
-          else
-            _this.frame.cmd("wrapperNotification", ["error", "File write error: "+res]);
         });
-      });
-    }
-    else
-      _this.frame.cmd("wrapperNotification", ["error", "Can't push zchain block if not logged."]);
-  });
-}
-
-//cleanup invalid blocks
-//- force_purge: if set, will remove "orphan" blocks (bad logic check), if blocks are not properly loaded, calling this can remove all of them
-zchain.prototype.cleanup = function(force_purge)
-{
-  var _this = this;
-
-  this.frame.cmd("siteInfo", {}, function(info){
-    var file = "data/users/"+info.auth_address+"/"+_this.name+".zchain";
-
-    if(info.cert_user_id){
-      _this.frame.cmd("fileGet", {inner_path: file, required: false, format: "base64"}, function(data){
-        var changed = false;
-
-        //read blocks
-        var blocks = {}
-        if(data)
-          blocks = msgpack.decode(pako.inflate(b64toa(data)));
-
-        //cleanup invalid blocks
-        for(var hash in blocks){
-          var block = blocks[hash];
-          var valid_hash = (hash_block(block[0] || "", info.auth_address, block[1]) == hash); 
-
-
-          //if force_purge set, remove missing block references
-          var purge = false;
-          if(force_purge){
-            var block_ref = _this.blocks[hash];
-            purge = (block_ref && _this.built.indexOf(block_ref) < 0);
-          }
-
-          //delete check
-          if(!valid_hash || purge){
-            changed = true;
-            delete blocks[hash];
-          }
-        }
-
-        if(changed){
-          //write blocks to zchain file
-          _this.frame.cmd("fileWrite", {inner_path: file, content_base64: atob64(pako.deflate(msgpack.encode(blocks)))}, function(res){
-            if(res == "ok"){
-              //sign and publish
-              var cfile = "data/users/"+info.auth_address+"/content.json";
-              _this.frame.cmd("siteSign", {inner_path: cfile}, function(res){
-                _this.frame.cmd("sitePublish", {inner_path: cfile, sign: false});
-                _this.loadUserFile(info.auth_address);
-              });
-            }
-            else
-              _this.frame.cmd("wrapperNotification", ["error", "File write error: "+res]);
-          });
-        }
-        else
-          _this.frame.cmd("wrapperNotification", ["error", "Nothing to cleanup (zchain)."]);
-      });
-    }
-    else
-      _this.frame.cmd("wrapperNotification", ["error", "Can't cleanup zchain blocks if not logged."]);
-  });
+      }
+    });
+  }
 }
 
 
