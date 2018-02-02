@@ -23,7 +23,6 @@ A user can only invalid the blocks following his blocks this way, in some case (
 It's also possible to replace the current chain by generating a chain more trustable than the first (more blocks, more users). But more the chain advance, more it's hard for a single user to replace it this way (limited storage).
 Modifying the chain rules (check/process) can invalid blocks of the chain, but it depends on the chain logic. It's possible to add new features, retroactives and preserving the chain.
 
-
 ## Use cases / Ideas
 
 ### Timestamp blocks
@@ -37,3 +36,107 @@ If some players are modifiyng their blocks or deleting them to troll, you could 
 ### Snapshot
 
 Since ZeroNet sites (zites) are owned by someone, this someone could create special blocks (snapshots) at the origin of the chain and set those blocks as the new chain origin. Those specials blocks could save the current state of the chain and invalid the other blocks, so users could cleanup their invalid blocks and push new blocks after this snapshot. This can save disk usage and drastically decrease the computation time of the state (it also makes the state more resistant to block modification/deletion, because the state can only rollback to the last snapshot). 
+
+## API
+
+```js
+// zchain constructor
+// name: identifier (data/users/*/<name>.zchain file used)
+// frame: ZeroFrame API object
+zchain(name, frame)
+
+// load users data
+zchain.load()
+
+// load single user data
+zchain.loadUserFile(auth_address)
+
+// build chain and state (call this periodically to update the state)
+// return true if rebuilt, false if nothing changed
+zchain.build()
+
+// get cert_user_id of a known chain auth_address
+// return cert_user_id or auth_address if not found
+zchain.getCertUserId(auth_address)
+
+// handle site_info (events, dynamic update, account)
+// info: site_info
+zchain.handleSiteInfo(info)
+
+// push a new block to the chain 
+// bdata: block data as js object
+// prev (optional): previous hash, default is chain last block
+// auth_address (optional): user, default is current logged user (used to push as another user, ex: the zite owner)
+zchain.push(bdata, prev, auth_address)
+
+// cleanup invalid/unused blocks
+// force_purge: if set (true), will remove unused blocks (bad logic check), if blocks are not properly loaded, using this can remove all of them
+// auth_address (optional): user, default is current logged user (used to push as another user, ex: the zite owner)
+zchain.cleanup(force_purge, auth_address)
+
+// register precheck callbacks, used to check the validity of an user or individual block to be added to the chain graph
+// cb_user(auth_address): should return true/false
+// cb_block(block): should return true/false
+zchain.addPreCheckCallbacks(cb_user, cb_block)
+
+// register a block check callback, used to check the validity of a block 
+// this callback is guaranteed to be called after all previous valid blocks were processed for a specific state and before the next block processing
+// if only one of the check callbacks return false, the block is invalid
+// cb(state, block): should return true/false to mark the block as valid/invalid
+zchain.addCheckCallback(cb)
+
+// register a block process callback, used to process a block data to compute the chain state
+// this callback is guaranteed to be called after the block validation for a specific state, it should only modify the passed state
+// cb(state, block)
+zchain.addProcessCallback(cb)
+
+// register a build callback
+// called before the build (init state) and at the end of the build (stats are availables)
+// cb(state, pre)
+//   pre: boolean, true if pre build, false if post build
+zchain.addBuildCallback(cb)
+```
+
+## Usage example
+
+```js
+// create chain (page is the ZeroFrame API object)
+var chain = zchain("test", page); // test.zchain will be used in each user data directory
+
+// define the chain logic
+// chain.addPreCheckCallbacks (accept/deny users and blocks)
+
+chain.addBuildCallback(function(state, pre){
+  if(pre){
+    // init state
+  }
+  else{
+    // finalize state, update things, display stats
+  }
+});
+
+chain.addCheckCallback(function(state, block){
+  // check block
+});
+
+chain.addProcessCallback(function(state, block){
+  // process block
+});
+
+// create or use an existing ZeroFrame API object, and send any site_info changes to the chain
+class Page extends ZeroFrame {
+  setSiteInfo(site_info) {
+    chain.handleSiteInfo(site_info); 
+    // ...
+  }
+  // ...
+}
+
+// start an update loop
+setInterval(function(){ 
+  if(chain.build()){
+    // changed
+    // update things, display stats
+  }
+}, 1500);
+```

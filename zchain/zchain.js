@@ -25,6 +25,9 @@ var check_block = function(state, block)
   return true;
 }
 
+// zchain constructor
+// name: identifier (data/users/*/<name>.zchain file used)
+// frame: ZeroFrame API object
 function zchain(name, frame)
 {
   this.name = name;
@@ -45,7 +48,7 @@ function zchain(name, frame)
   this.addCheckCallback(check_block); //add basic block checking
 }
 
-//load all data
+// load users data
 zchain.prototype.load = function()
 {
   var _this = this;
@@ -59,6 +62,7 @@ zchain.prototype.load = function()
   });
 }
 
+// load single user data
 zchain.prototype.loadUserFile = function(auth_address)
 {
   var _this = this;
@@ -267,7 +271,8 @@ zchain.prototype.buildGraph = function()
     this.recursive_ponderate(this.starts[i]);
 }
 
-//return true if rebuilt, false if nothing changed
+// build chain and state (call this periodically to update the state)
+// return true if rebuilt, false if nothing changed
 zchain.prototype.build = function()
 {
 
@@ -371,13 +376,15 @@ zchain.prototype.build = function()
   return false;
 }
 
+// get cert_user_id of a known chain auth_address
+// return cert_user_id or auth_address if not found
 zchain.prototype.getCertUserId = function(auth_address)
 {
   return this.cert_user_ids[auth_address] || auth_address;
 }
 
-//handle site_info (events, dynamic update, account)
-//info: site_info
+// handle site_info (events, dynamic update, account)
+// info: site_info
 zchain.prototype.handleSiteInfo = function(info)
 {
   this.site_info = info;
@@ -392,10 +399,10 @@ zchain.prototype.handleSiteInfo = function(info)
   }
 }
 
-//push a new block to the chain as the current cert id user
-//bdata: js object
-//prev (optional): previous hash
-//auth_address (optional): default is current logged user (used to push as another user, ex: the zite owner)
+// push a new block to the chain 
+// bdata: block data as js object
+// prev (optional): previous hash, default is chain last block
+// auth_address (optional): user, default is current logged user (used to push as another user, ex: the zite owner)
 zchain.prototype.push = function(bdata, prev, auth_address)
 {
   var _this = this;
@@ -439,9 +446,9 @@ zchain.prototype.push = function(bdata, prev, auth_address)
   }
 }
 
-//cleanup invalid blocks
-//force_purge: if set (true), will remove "orphan" blocks (bad logic check), if blocks are not properly loaded, calling this can remove all of them
-//auth_address (optional): default is current logged user (used to push as another user, ex: the zite owner)
+// cleanup invalid/unused blocks
+// force_purge: if set (true), will remove unused blocks (bad logic check), if blocks are not properly loaded, using this can remove all of them
+// auth_address (optional): user, default is current logged user (used to push as another user, ex: the zite owner)
 zchain.prototype.cleanup = function(force_purge, auth_address)
 {
   var _this = this;
@@ -499,34 +506,35 @@ zchain.prototype.cleanup = function(force_purge, auth_address)
 
 
 
-//register precheck callbacks, used to check the validity of a user or individual block to be added to the chain graph
-//cb_user(auth_address): should return true/false
-//cb_block(block): should return true/false
+// register precheck callbacks, used to check the validity of an user or individual block to be added to the chain graph
+// cb_user(auth_address): should return true/false
+// cb_block(block): should return true/false
 zchain.prototype.addPreCheckCallbacks = function(cb_user, cb_block)
 {
   this.precheck_callbacks.push([cb_user, cb_block]);
 }
 
-//register a block check callback, used to check the validity of a block 
-//this callback is guaranteed to be called after all previous valid blocks were processed for a specific state and before the next blocks processing
-//if only one of the check callbacks return false, the block is invalid
-//cb(state, block): should return true/false to mark the block as valid/invalid
+// register a block check callback, used to check the validity of a block 
+// this callback is guaranteed to be called after all previous valid blocks were processed for a specific state and before the next block processing
+// if only one of the check callbacks return false, the block is invalid
+// cb(state, block): should return true/false to mark the block as valid/invalid
 zchain.prototype.addCheckCallback = function(cb)
 {
   this.check_callbacks.push(cb);
 }
 
-//register a block process callback, used to process a block data to compute the chain state
-//this callback is guaranteed to be called after the block validation for a specific state, it should only modify the passed state
-//cb(state, block)
+// register a block process callback, used to process a block data to compute the chain state
+// this callback is guaranteed to be called after the block validation for a specific state, it should only modify the passed state
+// cb(state, block)
 zchain.prototype.addProcessCallback = function(cb)
 {
   this.process_callbacks.push(cb);
 }
 
-//register a build callback
-//cb(state, pre)
-//- pre: boolean, true if pre build, false if post build
+// register a build callback
+// called before the build (init state) and at the end of the build (stats are availables)
+// cb(state, pre)
+//   pre: boolean, true if pre build, false if post build
 zchain.prototype.addBuildCallback = function(cb)
 {
   this.build_callbacks.push(cb);
