@@ -415,6 +415,10 @@ zchain.prototype.push = function(bdata, prev, auth_address)
       prev = "";
   }
 
+  var privatekey = null;
+  if(auth_address)
+    privatekey = "stored";
+
   if(auth_address == null && this.site_info)
     auth_address = this.site_info.auth_address;
 
@@ -436,8 +440,8 @@ zchain.prototype.push = function(bdata, prev, auth_address)
         if(res == "ok"){
           //sign and publish
           var cfile = "data/users/"+auth_address+"/content.json";
-          _this.frame.cmd("siteSign", {inner_path: cfile}, function(res){
-            _this.frame.cmd("sitePublish", {inner_path: cfile, sign: false});
+          _this.frame.cmd("siteSign", {inner_path: cfile, privatekey: privatekey}, function(res){
+            _this.frame.cmd("sitePublish", {inner_path: cfile, privatekey: privatekey, sign: false});
             _this.loadUserFile(auth_address);
           });
         }
@@ -452,6 +456,10 @@ zchain.prototype.push = function(bdata, prev, auth_address)
 zchain.prototype.cleanup = function(force_purge, auth_address)
 {
   var _this = this;
+
+  var privatekey = null;
+  if(auth_address)
+    privatekey = "stored";
 
   if(auth_address == null && this.site_info)
     auth_address = this.site_info.auth_address;
@@ -493,8 +501,8 @@ zchain.prototype.cleanup = function(force_purge, auth_address)
           if(res == "ok"){
             //sign and publish
             var cfile = "data/users/"+auth_address+"/content.json";
-            _this.frame.cmd("siteSign", {inner_path: cfile}, function(res){
-              _this.frame.cmd("sitePublish", {inner_path: cfile, sign: false});
+            _this.frame.cmd("siteSign", {inner_path: cfile, privatekey: privatekey}, function(res){
+              _this.frame.cmd("sitePublish", {inner_path: cfile, privatekey: privatekey, sign: false});
               _this.loadUserFile(auth_address);
             });
           }
