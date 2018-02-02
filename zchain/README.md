@@ -96,6 +96,25 @@ zchain.addProcessCallback(cb)
 //   pre: boolean, true if pre build, false if post build
 zchain.addBuildCallback(cb)
 ```
+### Data
+
+* zchain
+  * stats
+  * blocks (all loaded blocks, map of hash => block)
+  * users (users block references, map of auth_address => (map of hash => block))
+  * built (list of blocks, final built chain)
+  * state (built state)
+
+* block (when loaded)
+  * prev (previous block hash)
+  * hash (block hash)
+  * data (block data)
+  * owner (user auth_address)
+
+* block (after/when building, keeps previous properties)
+  * prev_block (previous block reference)
+  * next_blocks (children blocks, map of hash => block)
+  * trust
 
 ## Usage example
 
