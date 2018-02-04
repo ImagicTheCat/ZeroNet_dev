@@ -63,15 +63,22 @@ zchain.getCertUserId(auth_address)
 // info: site_info
 zchain.handleSiteInfo(info)
 
+// request edit of user blocks (.zchain file content)
+// cb(auth_address, blocks): callback giving access to the zchain file blocks, should return true on modifications
+//   auth_address: final auth_address
+//   blocks: raw map of blocks
+// auth_address (optional): user, default is current logged user (used to modify as another user, ex: by the zite owner)
+zchain.editBlocks(cb, auth_address)
+
 // push a new block to the chain 
 // bdata: block data as js object
 // prev (optional): previous hash, default is chain last block
-// auth_address (optional): user, default is current logged user (used to push as another user, ex: the zite owner)
+// auth_address (optional): user, default is current logged user (used to modify as another user, ex: by the zite owner)
 zchain.push(bdata, prev, auth_address)
 
 // cleanup invalid/unused blocks
 // force_purge: if set (true), will remove unused blocks (bad logic check), if blocks are not properly loaded, using this can remove all of them
-// auth_address (optional): user, default is current logged user (used to push as another user, ex: the zite owner)
+// auth_address (optional): user, default is current logged user (used to modify as another user, ex: by the zite owner)
 zchain.cleanup(force_purge, auth_address)
 
 // register precheck callbacks, used to check the validity of an user or individual block to be added to the chain graph

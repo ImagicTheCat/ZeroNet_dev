@@ -36,6 +36,8 @@ function zchain(name, frame)
   this.blocks = {} //hash -> {prev: previous hash, hash: block hash, data: deserialized data, owner: user auth_address}
   this.users = {} //auth_address -> map of hash => owned block
   this.cert_user_ids = {}
+  this.file_edits = {} // map of auth_address => list of callbacks
+
   this.to_build = true;
   this.precheck_callbacks = []
   this.check_callbacks = []
@@ -399,14 +401,86 @@ zchain.prototype.handleSiteInfo = function(info)
   }
 }
 
+// request edit of user blocks (.zchain file content)
+// cb(auth_address, blocks): callback giving access to the zchain file blocks, should return true on modifications
+//   auth_address: final auth_address
+//   blocks: raw map of blocks
+// auth_address (optional): user, default is current logged user (used to modify as another user, ex: by the zite owner)
+zchain.prototype.editBlocks = function(cb, auth_address)
+{
+  var _this = this;
+  var auth_address_param = auth_address;
+
+  var privatekey = null;
+  if(auth_address)
+    privatekey = "stored";
+
+  if(auth_address == null && this.site_info)
+    auth_address = this.site_info.auth_address;
+
+  if(auth_address){
+    var cbs = this.file_edits[auth_address];
+    if(cbs) //file already opened, push callback
+      cbs.push(cb);
+    else{ //open file
+      cbs = [cb];
+      this.file_edits[auth_address] = cbs;
+
+      var file = "data/users/"+auth_address+"/"+this.name+".zchain";
+
+      _this.frame.cmd("fileGet", {inner_path: file, required: false, format: "base64"}, function(data){
+        //read blocks
+        var blocks = {}
+        if(data)
+          blocks = msgpack.decode(pako.inflate(b64toa(data)));
+
+        //process callbacks
+        var modified = false;
+        for(var i = 0; i < cbs.length; i++){
+          if(cbs[i](auth_address, blocks))
+            modified = true;
+        }
+
+        //clear callbacks
+        cbs.splice(0,cbs.length);
+
+        if(modified){
+          //write blocks to zchain file
+          _this.frame.cmd("fileWrite", {inner_path: file, content_base64: atob64(pako.deflate(msgpack.encode(blocks)))}, function(res){
+            if(res == "ok"){
+              //sign and publish
+              var cfile = "data/users/"+auth_address+"/content.json";
+              _this.frame.cmd("siteSign", {inner_path: cfile, privatekey: privatekey}, function(res){
+                _this.frame.cmd("sitePublish", {inner_path: cfile, privatekey: privatekey, sign: false});
+
+                //reload file
+                _this.loadUserFile(auth_address);
+
+                //remove edit entry
+                delete _this.file_edits[auth_address];
+
+                //retry edit if new callbacks have been added while writing to the file
+                for(var i = 0; i < cbs.length; i++)
+                  _this.editBlocks(cbs[i], auth_address_param);
+              });
+            }
+            else{
+              //remove edit entry
+              delete _this.file_edits[auth_address];
+            }
+          });
+        }
+      });
+    }
+  }
+}
+
 // push a new block to the chain 
 // bdata: block data as js object
 // prev (optional): previous hash, default is chain last block
-// auth_address (optional): user, default is current logged user (used to push as another user, ex: the zite owner)
+// auth_address (optional): user, default is current logged user (used to modify as another user, ex: by the zite owner)
 zchain.prototype.push = function(bdata, prev, auth_address)
 {
-  var _this = this;
-
   //null prev, get chain head hash
   if(prev == null){
     if(this.built.length > 0)
@@ -415,104 +489,48 @@ zchain.prototype.push = function(bdata, prev, auth_address)
       prev = "";
   }
 
-  var privatekey = null;
-  if(auth_address)
-    privatekey = "stored";
+  this.editBlocks(function(auth_address, blocks){
+    //add block
+    var bdatab64 = atob64(msgpack.encode(bdata));
+    blocks[hash_block(prev, auth_address, bdatab64)] = [prev, bdatab64];
 
-  if(auth_address == null && this.site_info)
-    auth_address = this.site_info.auth_address;
-
-  if(auth_address){
-    var file = "data/users/"+auth_address+"/"+this.name+".zchain";
-
-    _this.frame.cmd("fileGet", {inner_path: file, required: false, format: "base64"}, function(data){
-      //read blocks
-      var blocks = {}
-      if(data)
-        blocks = msgpack.decode(pako.inflate(b64toa(data)));
-
-      //add block
-      var bdatab64 = atob64(msgpack.encode(bdata));
-      blocks[hash_block(prev, auth_address, bdatab64)] = [prev, bdatab64];
-
-      //write blocks to zchain file
-      _this.frame.cmd("fileWrite", {inner_path: file, content_base64: atob64(pako.deflate(msgpack.encode(blocks)))}, function(res){
-        if(res == "ok"){
-          //sign and publish
-          var cfile = "data/users/"+auth_address+"/content.json";
-          _this.frame.cmd("siteSign", {inner_path: cfile, privatekey: privatekey}, function(res){
-            _this.frame.cmd("sitePublish", {inner_path: cfile, privatekey: privatekey, sign: false});
-            _this.loadUserFile(auth_address);
-          });
-        }
-      });
-    });
-  }
+    return true;
+  }, auth_address);
 }
 
 // cleanup invalid/unused blocks
 // force_purge: if set (true), will remove unused blocks (bad logic check), if blocks are not properly loaded, using this can remove all of them
-// auth_address (optional): user, default is current logged user (used to push as another user, ex: the zite owner)
+// auth_address (optional): user, default is current logged user (used to modify as another user, ex: by the zite owner)
 zchain.prototype.cleanup = function(force_purge, auth_address)
 {
   var _this = this;
 
-  var privatekey = null;
-  if(auth_address)
-    privatekey = "stored";
+  this.editBlocks(function(auth_address, blocks){
+    var changed = false;
 
-  if(auth_address == null && this.site_info)
-    auth_address = this.site_info.auth_address;
-
-  if(auth_address){
-    var file = "data/users/"+auth_address+"/"+_this.name+".zchain";
-
-    this.frame.cmd("fileGet", {inner_path: file, required: false, format: "base64"}, function(data){
-      var changed = false;
-
-      //read blocks
-      var blocks = {}
-      if(data)
-        blocks = msgpack.decode(pako.inflate(b64toa(data)));
-
-      //cleanup invalid blocks
-      for(var hash in blocks){
-        var block = blocks[hash];
-        var valid_hash = (hash_block(block[0] || "", auth_address, block[1]) == hash); 
+    //cleanup invalid blocks
+    for(var hash in blocks){
+      var block = blocks[hash];
+      var valid_hash = (hash_block(block[0] || "", auth_address, block[1]) == hash); 
 
 
-        //if force_purge set, remove missing block references
-        var purge = false;
-        if(force_purge){
-          var block_ref = _this.blocks[hash];
-          purge = (block_ref && _this.built.indexOf(block_ref) < 0);
-        }
-
-        //delete check
-        if(!valid_hash || purge){
-          changed = true;
-          delete blocks[hash];
-        }
+      //if force_purge set, remove missing block references
+      var purge = false;
+      if(force_purge){
+        var block_ref = _this.blocks[hash];
+        purge = (block_ref && _this.built.indexOf(block_ref) < 0);
       }
 
-      if(changed){
-        //write blocks to zchain file
-        _this.frame.cmd("fileWrite", {inner_path: file, content_base64: atob64(pako.deflate(msgpack.encode(blocks)))}, function(res){
-          if(res == "ok"){
-            //sign and publish
-            var cfile = "data/users/"+auth_address+"/content.json";
-            _this.frame.cmd("siteSign", {inner_path: cfile, privatekey: privatekey}, function(res){
-              _this.frame.cmd("sitePublish", {inner_path: cfile, privatekey: privatekey, sign: false});
-              _this.loadUserFile(auth_address);
-            });
-          }
-        });
+      //delete check
+      if(!valid_hash || purge){
+        changed = true;
+        delete blocks[hash];
       }
-    });
-  }
+    }
+
+    return changed;
+  }, auth_address);
 }
-
-
 
 // register precheck callbacks, used to check the validity of an user or individual block to be added to the chain graph
 // cb_user(auth_address): should return true/false
